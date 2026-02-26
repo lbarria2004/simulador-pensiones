@@ -8,11 +8,12 @@
  * - https://cmfchile.cl/institucional/legislacion_normativa/
  * - https://www.spensiones.cl/portal/institucional/594/w3-propertyvalue-9922.html (Sobrevivencia)
  * - https://www.spensiones.cl/portal/institucional/594/w3-propertyvalue-9923.html (Invalidez)
+ * - https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-3262.html (Anexo 7 - Capitales Necesarios)
  * 
  * Tipos de Pensión:
  * - Vejez: Edad legal (H:65, M:60) o anticipada
  * - Invalidez: Total (70%), Total 2/3 (50%), Parcial (35%)
- * - Sobrevivencia: Porcentajes según parentesco
+ * - Sobrevivencia: Porcentajes según parentesco (Art. 58 DL 3500)
  * 
  * Cláusulas Adicionales:
  * - Período Garantizado: meses garantizados de pago
@@ -56,9 +57,8 @@ export interface DatosAfiliado {
   fondosAcumulados: number;
   anosCotizados: number;
   beneficiarios?: BeneficiarioPension[];
-  // Para invalidez
-  ingresoBase?: number;        // Promedio remuneraciones últimos 10 años
-  cubiertoSIS?: boolean;       // Si está cubierto por Seguro Invalidez y Sobrevivencia
+  ingresoBase?: number;
+  cubiertoSIS?: boolean;
 }
 
 export interface DatosEscenarioRV {
@@ -85,16 +85,15 @@ export interface ResultadoEscenario {
     pensionAumentada: number;
     pensionFinal: number;
   };
-  // Específicos para sobrevivencia
   pensionPorBeneficiario?: {
     tipo: string;
     porcentaje: number;
     pensionMensual: number;
   }[];
-  // Específicos para invalidez
   gradoInvalidez?: GradoInvalidez;
   ingresoBase?: number;
   porcentajeInvalidez?: number;
+  pensionReferencia?: number;
   
   proyeccion?: ProyeccionAnual[];
   advertencias?: string[];
@@ -118,17 +117,15 @@ export const EDAD_JUBILACION = {
   MUJER: 60
 } as const;
 
-// Tasas de interés técnicas (valores referencia 2024-2025)
 export const TASAS_INTERES = {
-  RETIRO_PROGRAMADO: 0.0341,        // 3.41%
-  RENTA_VITALICIA_VEJEZ: 0.0279,    // 2.79%
-  RENTA_VITALICIA_INVALIDEZ: 0.0296, // 2.96%
-  SOBREVIVENCIA: 0.0279              // 2.79%
+  RETIRO_PROGRAMADO: 0.0341,
+  RENTA_VITALICIA_VEJEZ: 0.0279,
+  RENTA_VITALICIA_INVALIDEZ: 0.0296,
+  SOBREVIVENCIA: 0.0279
 } as const;
 
 export const UF_ACTUAL = 38500;
 
-// Factores de ajuste por período garantizado
 export const FACTORES_PERIODO_GARANTIZADO: Record<number, number> = {
   0: 1.000, 60: 0.985, 120: 0.970, 180: 0.950, 240: 0.925, 300: 0.900, 360: 0.875
 };
@@ -167,16 +164,12 @@ export function calcularFactorGarantizado(meses: number): number {
 // ==========================================
 
 export const PORCENTAJES_SOBREVIVENCIA = {
-  // Cónyuge
-  CONYUGE_SIN_HIJOS: 0.60,           // 60% si no hay hijos comunes
-  CONYUGE_CON_HIJOS: 0.50,           // 50% si hay hijos comunes
-  // Conviviente civil
-  CONVIVIENTE_SIN_HIJOS: 0.60,       // 60%
-  CONVIVIENTE_CON_HIJOS: 0.50,       // 50%
-  // Hijos (hasta 24 años si estudian, o cualquier edad si inválidos)
-  HIJO: 0.15,                        // 15% cada uno
-  // Padres/Madres (si no hay cónyuge ni hijos)
-  PADRE_MADRE: 0.15                  // 15% cada uno
+  CONYUGE_SIN_HIJOS: 0.60,
+  CONYUGE_CON_HIJOS: 0.50,
+  CONVIVIENTE_SIN_HIJOS: 0.60,
+  CONVIVIENTE_CON_HIJOS: 0.50,
+  HIJO: 0.15,
+  PADRE_MADRE: 0.15
 } as const;
 
 // ==========================================
@@ -185,22 +178,15 @@ export const PORCENTAJES_SOBREVIVENCIA = {
 // ==========================================
 
 export const PORCENTAJES_INVALIDEZ: Record<GradoInvalidez, number> = {
-  total: 0.70,       // 70% del ingreso base
-  total_2_3: 0.50,   // 50% del ingreso base
-  parcial: 0.35      // 35% del ingreso base
-} as const;
-
-// Capital representativo para invalidez (factores MI-H-2014)
-export const CAPITALES_REPRESENTATIVOS_INVALIDEZ: Record<GradoInvalidez, number> = {
-  total: 5.4,        // Factor para gran invalidez
-  total_2_3: 4.2,    // Factor para invalidez total
-  parcial: 2.8       // Factor para invalidez parcial
+  total: 0.70,
+  total_2_3: 0.50,
+  parcial: 0.35
 } as const;
 
 // PGU (Pensión Garantizada Universal)
 export const PGU = {
-  MONTO_BASE: 224004,    // Monto base PGU 2024
-  TOPE_INGRESO: 1054000  // Tope para acceder
+  MONTO_BASE: 224004,
+  TOPE_INGRESO: 1054000
 } as const;
 
 // ==========================================
@@ -263,7 +249,6 @@ export const TABLA_B_M_2020: Record<number, number> = {
 };
 
 // Tabla de mortalidad para inválidos (I-H-2020 e I-M-2020)
-// Estas tablas tienen mayor mortalidad que las de válidos
 export const TABLA_I_H_2020: Record<number, number> = {
   18: 0.0125, 19: 0.0132, 20: 0.0140, 21: 0.0148, 22: 0.0157,
   23: 0.0166, 24: 0.0176, 25: 0.0187, 26: 0.0199, 27: 0.0212,
@@ -307,10 +292,12 @@ export function getQx(edad: number, sexo: Sexo, esInvalido: boolean = false): nu
   const edadValida = Math.max(0, Math.min(edad, 110));
   
   if (esInvalido) {
+    const edadMin = 18;
+    const edadInv = Math.max(edadMin, Math.min(edadValida, 81));
     if (sexo === 'M') {
-      return TABLA_I_H_2020[edadValida] ?? TABLA_CB_H_2020[edadValida] ?? 1.0;
+      return TABLA_I_H_2020[edadInv] ?? TABLA_CB_H_2020[edadValida] ?? 1.0;
     } else {
-      return TABLA_I_M_2020[edadValida] ?? TABLA_B_M_2020[edadValida] ?? 1.0;
+      return TABLA_I_M_2020[edadInv] ?? TABLA_B_M_2020[edadValida] ?? 1.0;
     }
   }
   
@@ -349,7 +336,7 @@ export function calcularExpectativaVida(edad: number, sexo: Sexo, esInvalido: bo
 }
 
 /**
- * Calcula el Capital Necesario Unitario (CNU)
+ * Calcula el Capital Necesario Unitario (CNU) - Versión básica para un individuo
  * 
  * FÓRMULA OFICIAL (Nota Técnica N°5 SP):
  * CNU = Σ [lx+t / lx] × [1 / (1+i)^(t+0.5)] × 12
@@ -365,6 +352,7 @@ export function calcularCNU(
   let cnu = 0;
   const maxEdad = esInvalido ? 81 : 110;
   
+  // CNU del titular
   for (let t = 0; t <= (maxEdad - edad); t++) {
     const lxFutura = calcularLx(edad + t, sexo, esInvalido);
     const factorSupervivencia = lxFutura / lxInicial;
@@ -372,11 +360,15 @@ export function calcularCNU(
     cnu += factorSupervivencia * factorDescuento;
   }
   
-  // Agregar CNU de beneficiarios si existen
+  // Agregar CNU de beneficiarios (para vejez con cargas)
   if (beneficiarios && beneficiarios.length > 0) {
     for (const ben of beneficiarios) {
-      const cnuBen = calcularCNUConjunto(edad, sexo, tasaInteres, ben.edad, ben.sexo, esInvalido);
-      cnu += cnuBen * ben.porcentajePension;
+      // CNU de carga: beneficios por sobrevivencia del beneficiario tras fallecimiento del titular
+      const cnuBen = calcularCNUSobrevivenciaBeneficiario(
+        edad, sexo, tasaInteres,
+        ben.edad, ben.sexo, ben.porcentajePension, esInvalido
+      );
+      cnu += cnuBen;
     }
   }
   
@@ -384,34 +376,64 @@ export function calcularCNU(
 }
 
 /**
- * Calcula CNU conjunto para beneficiarios (sobrevivencia)
+ * Calcula el CNU de sobrevivencia para un beneficiario específico
+ * (Capital necesario para pagar pensión al beneficiario cuando fallezca el titular)
  */
-function calcularCNUConjunto(
+function calcularCNUSobrevivenciaBeneficiario(
   edadTitular: number,
   sexoTitular: Sexo,
   tasaInteres: number,
   edadBeneficiario: number,
   sexoBeneficiario: Sexo,
-  esInvalido: boolean = false
+  porcentaje: number,
+  esInvalidoTitular: boolean = false
 ): number {
-  const lxTitular = calcularLx(edadTitular, sexoTitular, esInvalido);
-  let cnuConjunto = 0;
+  const lxTitular = calcularLx(edadTitular, sexoTitular, esInvalidoTitular);
+  const lxBeneficiario = calcularLx(edadBeneficiario, sexoBeneficiario, false);
+  let cnu = 0;
   const maxEdad = Math.max(110 - edadTitular, 110 - edadBeneficiario);
   
   for (let t = 0; t <= maxEdad; t++) {
-    const lxTitularFutura = calcularLx(edadTitular + t, sexoTitular, esInvalido);
+    // Probabilidad de que el titular haya fallecido en el año t
+    const lxTitularFutura = calcularLx(edadTitular + t, sexoTitular, esInvalidoTitular);
     const probTitularFallecido = 1 - (lxTitularFutura / lxTitular);
     
+    // Probabilidad de que el beneficiario esté vivo en el año t
     const lxBeneficiarioFutura = calcularLx(edadBeneficiario + t, sexoBeneficiario, false);
-    const probBeneficiarioVivo = lxBeneficiarioFutura / calcularLx(edadBeneficiario, sexoBeneficiario, false);
+    const probBeneficiarioVivo = lxBeneficiarioFutura / lxBeneficiario;
     
+    // Probabilidad conjunta: titular fallecido y beneficiario vivo
     const probConjunta = probTitularFallecido * probBeneficiarioVivo;
     const factorDescuento = 1 / Math.pow(1 + tasaInteres, t + 0.5);
     
-    cnuConjunto += probConjunta * factorDescuento;
+    cnu += probConjunta * factorDescuento * porcentaje;
   }
   
-  return cnuConjunto;
+  return cnu;
+}
+
+/**
+ * Calcula el CNU individual para un beneficiario de sobrevivencia
+ * (Cuando el causante YA falleció - pensión de sobrevivencia)
+ * 
+ * Fórmula: CNU = Σ [lx+t / lx] × [1 / (1+i)^(t+0.5)] × 12
+ */
+export function calcularCNUIndividual(
+  edad: number,
+  sexo: Sexo,
+  tasaInteres: number
+): number {
+  const lxInicial = calcularLx(edad, sexo, false);
+  let cnu = 0;
+  
+  for (let t = 0; t <= (110 - edad); t++) {
+    const lxFutura = calcularLx(edad + t, sexo, false);
+    const factorSupervivencia = lxFutura / lxInicial;
+    const factorDescuento = 1 / Math.pow(1 + tasaInteres, t + 0.5);
+    cnu += factorSupervivencia * factorDescuento;
+  }
+  
+  return cnu * 12;
 }
 
 // ==========================================
@@ -466,9 +488,6 @@ export function calcularRetiroProgramado(
   };
 }
 
-/**
- * Calcula Renta Vitalicia Inmediata (sin cláusulas adicionales)
- */
 export function calcularRVInmediata(
   fondos: number,
   edad: number,
@@ -493,9 +512,6 @@ export function calcularRVInmediata(
   };
 }
 
-/**
- * Calcula Renta Vitalicia con Período Garantizado
- */
 export function calcularRVPeriodoGarantizado(
   fondos: number,
   edad: number,
@@ -536,9 +552,6 @@ export function calcularRVPeriodoGarantizado(
   };
 }
 
-/**
- * Calcula Renta Vitalicia con Cláusula de Aumento Temporal de Pensión
- */
 export function calcularRVAumentoTemporal(
   fondos: number,
   edad: number,
@@ -617,9 +630,6 @@ export function calcularRVAumentoTemporal(
   };
 }
 
-/**
- * Calcula Renta Vitalicia con AMBAS cláusulas
- */
 export function calcularRVConAmbasClausulas(
   fondos: number,
   edad: number,
@@ -699,15 +709,12 @@ export function calcularRVConAmbasClausulas(
 // ==========================================
 
 /**
- * Calcula la pensión de invalidez
+ * Calcula la pensión de invalidez según DL 3500 y normas de SUSESO
  * 
- * Según DL 3500 y normas de SUSESO:
- * - Invalidez Total: 70% del ingreso base
- * - Invalidez Total 2/3: 50% del ingreso base
- * - Invalidez Parcial: 35% del ingreso base
- * 
- * El ingreso base es el promedio de remuneraciones de los últimos 10 años
- * Si el afiliado está cubierto por SIS, se complementa con el seguro
+ * Grados:
+ * - Total: 70% del ingreso base
+ * - Total 2/3: 50% del ingreso base  
+ * - Parcial: 35% del ingreso base
  */
 export function calcularPensionInvalidez(
   fondos: number,
@@ -722,7 +729,7 @@ export function calcularPensionInvalidez(
   const porcentaje = PORCENTAJES_INVALIDEZ[gradoInvalidez];
   const pensionReferencia = ingresoBase * porcentaje;
   
-  // Calcular CNU con tabla de inválidos
+  // CNU con tabla de inválidos
   const cnu = calcularCNU(edad, sexo, tasaInteres, beneficiarios, true);
   const expectativaVida = calcularExpectativaVida(edad, sexo, true);
   
@@ -730,12 +737,11 @@ export function calcularPensionInvalidez(
   let capitalSIS = 0;
   
   if (cubiertoSIS) {
-    // Si está cubierto por SIS, se calcula el capital necesario
-    // y se compara con los fondos acumulados
+    // Capital necesario para financiar la pensión de referencia
     const capitalNecesario = pensionReferencia * cnu;
     
     if (fondos >= capitalNecesario) {
-      // Los fondos alcanzan para financiar la pensión
+      // Los fondos alcanzan
       pensionMensual = fondos / cnu;
     } else {
       // El SIS complementa la diferencia
@@ -743,17 +749,16 @@ export function calcularPensionInvalidez(
       pensionMensual = pensionReferencia;
     }
   } else {
-    // Sin cobertura SIS, solo se usan los fondos acumulados
+    // Sin cobertura SIS
     pensionMensual = fondos / cnu;
   }
   
-  // Generar proyección
+  // Proyección
   const proyeccion: ProyeccionAnual[] = [];
   const maxAnos = Math.min(45, 81 - edad);
   
   for (let año = 0; año < maxAnos; año++) {
     const edadActual = edad + año;
-    const cnuAnual = calcularCNU(edadActual, sexo, tasaInteres, undefined, true);
     
     proyeccion.push({
       año: año + 1,
@@ -792,6 +797,7 @@ export function calcularPensionInvalidez(
     gradoInvalidez,
     ingresoBase,
     porcentajeInvalidez: porcentaje,
+    pensionReferencia,
     proyeccion,
     advertencias
   };
@@ -846,7 +852,7 @@ export function calcularRetiroProgramadoInvalidez(
     tasaInteres,
     expectativaVida,
     proyeccion,
-    advertencias: ['Usa tabla de mortalidad de inválidos (I-H/I-M-2020)']
+    advertencias: ['Usa tabla de mortalidad de inválidos (I-H/I-M-2020)', 'Pensión decrece en el tiempo']
   };
 }
 
@@ -863,7 +869,6 @@ export function calcularPorcentajesBeneficiarios(
 ): { tipo: string; porcentaje: number; edad: number; sexo: Sexo }[] {
   const resultados: { tipo: string; porcentaje: number; edad: number; sexo: Sexo }[] = [];
   
-  // Contar hijos para determinar si hay hijos comunes
   const tieneHijos = beneficiarios.some(b => b.tipo === 'hijo');
   
   for (const ben of beneficiarios) {
@@ -885,7 +890,6 @@ export function calcularPorcentajesBeneficiarios(
         break;
       case 'padre':
       case 'madre':
-        // Solo reciben pensión si no hay cónyuge, conviviente ni hijos
         const tieneConyugeOHijos = beneficiarios.some(
           b => b.tipo === 'conyuge' || b.tipo === 'conviviente' || b.tipo === 'hijo'
         );
@@ -909,63 +913,86 @@ export function calcularPorcentajesBeneficiarios(
 }
 
 /**
+ * Calcula el CNU total para pensión de sobrevivencia
+ * 
+ * FÓRMULA OFICIAL (Anexo 7 - Compendio de Pensiones):
+ * CNU_total = Σ (CNU_beneficiario × porcentaje)
+ * 
+ * Cada CNU_beneficiario se calcula con la fórmula estándar
+ * usando la edad y sexo del beneficiario
+ */
+export function calcularCNUSobrevivencia(
+  beneficiarios: BeneficiarioPension[],
+  tasaInteres: number
+): { cnuTotal: number; detallePorBeneficiario: { tipo: string; cnu: number; porcentaje: number }[] } {
+  const porcentajes = calcularPorcentajesBeneficiarios(beneficiarios);
+  let cnuTotal = 0;
+  const detallePorBeneficiario: { tipo: string; cnu: number; porcentaje: number }[] = [];
+  
+  for (const ben of porcentajes) {
+    // CNU individual del beneficiario
+    const cnuIndividual = calcularCNUIndividual(ben.edad, ben.sexo, tasaInteres);
+    
+    // Aporte al CNU total ponderado por porcentaje
+    cnuTotal += cnuIndividual * ben.porcentaje;
+    
+    detallePorBeneficiario.push({
+      tipo: ben.tipo,
+      cnu: cnuIndividual,
+      porcentaje: ben.porcentaje
+    });
+  }
+  
+  return { cnuTotal, detallePorBeneficiario };
+}
+
+/**
  * Calcula la pensión de sobrevivencia
  * 
- * La pensión de sobrevivencia se calcula como un porcentaje
- * de la pensión de referencia del causante fallecido.
- * 
- * La pensión de referencia es:
- * - 70% del ingreso base si estaba cubierto por SIS
- * - El 100% de la pensión que recibía si ya era pensionado
- * - El saldo acumulado / CNU si no estaba cubierto por SIS
+ * Según DL 3500:
+ * 1. Se determina la pensión de referencia del causante
+ * 2. Se calculan los porcentajes por beneficiario
+ * 3. Se calcula el CNU total de todos los beneficiarios
+ * 4. La pensión se distribuye según porcentajes
  */
 export function calcularPensionSobrevivencia(
   fondosCausante: number,
   edadCausante: number,
   sexoCausante: Sexo,
   beneficiarios: BeneficiarioPension[],
-  pensionReferenciaCausante?: number,  // Si ya era pensionado
-  ingresoBaseCausante?: number,         // Para calcular pensión de referencia
+  pensionReferenciaCausante?: number,
+  ingresoBaseCausante?: number,
   tasaInteres: number = TASAS_INTERES.SOBREVIVENCIA,
   cubiertoSIS: boolean = true
 ): ResultadoEscenario {
-  // Calcular pensión de referencia del causante
+  // 1. Calcular pensión de referencia del causante
   let pensionReferencia: number;
   
   if (pensionReferenciaCausante && pensionReferenciaCausante > 0) {
-    // Si ya era pensionado, la referencia es su pensión actual
     pensionReferencia = pensionReferenciaCausante;
   } else if (cubiertoSIS && ingresoBaseCausante && ingresoBaseCausante > 0) {
-    // Si estaba cubierto por SIS, la referencia es 70% del ingreso base
     pensionReferencia = ingresoBaseCausante * 0.70;
   } else {
-    // Sin SIS, se calcula con los fondos
     const cnuCausante = calcularCNU(edadCausante, sexoCausante, tasaInteres);
     pensionReferencia = fondosCausante / cnuCausante;
   }
   
-  // Calcular porcentajes por beneficiario
+  // 2. Calcular porcentajes por beneficiario
   const porcentajesBeneficiarios = calcularPorcentajesBeneficiarios(beneficiarios);
   const porcentajeTotal = porcentajesBeneficiarios.reduce((sum, b) => sum + b.porcentaje, 0);
   
-  // El total de pensiones no puede exceder el 100% de la pensión de referencia
+  // Si excede 100%, se ajusta proporcionalmente
   const factorAjuste = porcentajeTotal > 1 ? 1 / porcentajeTotal : 1;
   
-  // Calcular CNU conjunto con todos los beneficiarios
-  let cnuTotal = 0;
+  // 3. Calcular CNU total de sobrevivencia
+  const { cnuTotal, detallePorBeneficiario } = calcularCNUSobrevivencia(beneficiarios, tasaInteres);
+  
+  // 4. Distribuir pensión por beneficiario
   const pensionPorBeneficiario: { tipo: string; porcentaje: number; pensionMensual: number }[] = [];
   
   for (const ben of porcentajesBeneficiarios) {
     const porcentajeAjustado = ben.porcentaje * factorAjuste;
     const pensionBeneficiario = pensionReferencia * porcentajeAjustado;
-    
-    // Calcular CNU para este beneficiario
-    const cnuBeneficiario = calcularCNUConjunto(
-      edadCausante, sexoCausante, tasaInteres,
-      ben.edad, ben.sexo, false
-    );
-    
-    cnuTotal += cnuBeneficiario * porcentajeAjustado;
     
     pensionPorBeneficiario.push({
       tipo: ben.tipo,
@@ -974,11 +1001,7 @@ export function calcularPensionSobrevivencia(
     });
   }
   
-  // Verificar si los fondos alcanzan
-  const capitalNecesario = pensionReferencia * cnuTotal * 12;
-  const fondosSuficientes = fondosCausante >= capitalNecesario || cubiertoSIS;
-  
-  // Calcular expectativa de vida promedio de beneficiarios
+  // Expectativa de vida promedio
   const expectativaVidaPromedio = porcentajesBeneficiarios.length > 0
     ? porcentajesBeneficiarios.reduce(
         (sum, ben) => sum + calcularExpectativaVida(ben.edad, ben.sexo), 0
@@ -1006,17 +1029,17 @@ export function calcularPensionSobrevivencia(
     pensionMensual: Math.round(pensionReferencia * Math.min(porcentajeTotal, 1)),
     pensionEnUF: pensionReferencia * Math.min(porcentajeTotal, 1) / UF_ACTUAL,
     pensionAnual: pensionReferencia * Math.min(porcentajeTotal, 1) * 12,
-    cnu: cnuTotal * 12,
+    cnu: cnuTotal,
     tasaInteres,
     expectativaVida: expectativaVidaPromedio,
     pensionPorBeneficiario,
+    pensionReferencia,
     advertencias
   };
 }
 
 /**
- * Calcula las opciones de pensión de sobrevivencia para un afiliado fallecido
- * Incluye Retiro Programado y Renta Vitalicia
+ * Calcula las opciones de pensión de sobrevivencia: RP y RV
  */
 export function calcularOpcionesSobrevivencia(
   fondosCausante: number,
@@ -1030,42 +1053,77 @@ export function calcularOpcionesSobrevivencia(
 ): ResultadoEscenario[] {
   const resultados: ResultadoEscenario[] = [];
   
-  // 1. Retiro Programado de Sobrevivencia
-  const cnuTotal = calcularCNUConjuntoSobrevivencia(
-    edadCausante, sexoCausante, beneficiarios, tasaRP
-  );
-  const pensionRP = fondosCausante / cnuTotal;
+  // Calcular pensión de referencia
+  let pensionReferencia: number;
   
+  if (pensionReferenciaCausante && pensionReferenciaCausante > 0) {
+    pensionReferencia = pensionReferenciaCausante;
+  } else if (ingresoBaseCausante && ingresoBaseCausante > 0) {
+    pensionReferencia = ingresoBaseCausante * 0.70;
+  } else {
+    const cnuCausante = calcularCNU(edadCausante, sexoCausante, tasaRP);
+    pensionReferencia = fondosCausante / cnuCausante;
+  }
+  
+  // Porcentajes
   const porcentajes = calcularPorcentajesBeneficiarios(beneficiarios);
+  const porcentajeTotal = porcentajes.reduce((sum, b) => sum + b.porcentaje, 0);
+  const factorAjuste = porcentajeTotal > 1 ? 1 / porcentajeTotal : 1;
+  
+  // 1. RETIRO PROGRAMADO DE SOBREVIVENCIA
+  const { cnuTotal: cnuRP } = calcularCNUSobrevivencia(beneficiarios, tasaRP);
+  const pensionRP = fondosCausante / cnuRP;
+  
   const pensionPorBenRP = porcentajes.map(b => ({
     tipo: b.tipo,
-    porcentaje: b.porcentaje,
-    pensionMensual: Math.round(pensionRP * b.porcentaje)
+    porcentaje: b.porcentaje * factorAjuste,
+    pensionMensual: Math.round(pensionRP * b.porcentaje * factorAjuste)
   }));
+  
+  // Proyección RP Sobrevivencia
+  const proyeccionRP: ProyeccionAnual[] = [];
+  let saldoRP = fondosCausante;
+  
+  for (let año = 0; año <= 30; año++) {
+    const { cnuTotal: cnuAnual } = calcularCNUSobrevivencia(beneficiarios, tasaRP);
+    const pensionAnual = saldoRP / cnuAnual * 12;
+    
+    proyeccionRP.push({
+      año: año + 1,
+      edad: edadCausante + año,
+      pensionMensual: Math.round(pensionAnual / 12),
+      saldoAcumulado: Math.round(saldoRP),
+      retiroAcumulado: 0,
+      fase: 'decreciente'
+    });
+    
+    saldoRP = Math.max(0, (saldoRP - pensionAnual) * (1 + tasaRP));
+    if (saldoRP <= 0) break;
+  }
   
   resultados.push({
     nombre: 'Retiro Programado Sobrevivencia',
     pensionMensual: Math.round(pensionRP),
     pensionEnUF: pensionRP / UF_ACTUAL,
     pensionAnual: pensionRP * 12,
-    cnu: cnuTotal,
+    cnu: cnuRP,
     tasaInteres: tasaRP,
     expectativaVida: calcularExpectativaVida(beneficiarios[0]?.edad || 60, beneficiarios[0]?.sexo || 'F'),
     pensionPorBeneficiario: pensionPorBenRP,
-    advertencias: ['Pensión decrece en el tiempo']
+    pensionReferencia,
+    proyeccion: proyeccionRP,
+    advertencias: ['Pensión decrece en el tiempo', 'Distribución según Art. 58 DL 3500']
   });
   
-  // 2. Renta Vitalicia de Sobrevivencia
-  const cnuRV = calcularCNUConjuntoSobrevivencia(
-    edadCausante, sexoCausante, beneficiarios, tasaRV
-  );
+  // 2. RENTA VITALICIA DE SOBREVIVENCIA
+  const { cnuTotal: cnuRV } = calcularCNUSobrevivencia(beneficiarios, tasaRV);
   const primaSeguro = fondosCausante * 0.03;
   const pensionRV = (fondosCausante - primaSeguro) / cnuRV;
   
   const pensionPorBenRV = porcentajes.map(b => ({
     tipo: b.tipo,
-    porcentaje: b.porcentaje,
-    pensionMensual: Math.round(pensionRV * b.porcentaje)
+    porcentaje: b.porcentaje * factorAjuste,
+    pensionMensual: Math.round(pensionRV * b.porcentaje * factorAjuste)
   }));
   
   resultados.push({
@@ -1077,34 +1135,11 @@ export function calcularOpcionesSobrevivencia(
     tasaInteres: tasaRV,
     expectativaVida: calcularExpectativaVida(beneficiarios[0]?.edad || 60, beneficiarios[0]?.sexo || 'F'),
     pensionPorBeneficiario: pensionPorBenRV,
-    advertencias: ['Pensión fija de por vida']
+    pensionReferencia,
+    advertencias: ['Pensión fija de por vida', 'Distribución según Art. 58 DL 3500']
   });
   
   return resultados;
-}
-
-/**
- * Calcula el CNU conjunto para sobrevivencia
- */
-function calcularCNUConjuntoSobrevivencia(
-  edadCausante: number,
-  sexoCausante: Sexo,
-  beneficiarios: BeneficiarioPension[],
-  tasaInteres: number
-): number {
-  const porcentajes = calcularPorcentajesBeneficiarios(beneficiarios);
-  let cnuTotal = 0;
-  
-  for (const ben of beneficiarios) {
-    const porcentaje = porcentajes.find(p => p.tipo === ben.tipo)?.porcentaje || 0;
-    const cnuBen = calcularCNUConjunto(
-      edadCausante, sexoCausante, tasaInteres,
-      ben.edad, ben.sexo, false
-    );
-    cnuTotal += cnuBen * porcentaje;
-  }
-  
-  return cnuTotal * 12;
 }
 
 // ==========================================
