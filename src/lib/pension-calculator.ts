@@ -160,17 +160,41 @@ export function calcularFactorGarantizado(meses: number): number {
 
 // ==========================================
 // PORCENTAJES DE PENSIÓN DE SOBREVIVENCIA
-// Según Art. 58 DL 3500
+// Según Art. 58 DL 3500 y normativa SUSESO
 // ==========================================
 
 export const PORCENTAJES_SOBREVIVENCIA = {
-  CONYUGE_SIN_HIJOS: 0.60,
-  CONYUGE_CON_HIJOS: 0.50,
-  CONVIVIENTE_SIN_HIJOS: 0.60,
-  CONVIVIENTE_CON_HIJOS: 0.50,
-  HIJO: 0.15,
-  PADRE_MADRE: 0.15
+  // Cónyuge o Conviviente Civil
+  CONYUGE_SIN_HIJOS: 0.60,        // 60% si no hay hijos con derecho
+  CONYUGE_CON_HIJOS: 0.50,        // 50% si hay hijos con derecho a pensión
+  CONVIVIENTE_SIN_HIJOS: 0.60,    // 60% si no hay hijos con derecho
+  CONVIVIENTE_CON_HIJOS: 0.50,    // 50% si hay hijos con derecho a pensión
+  
+  // Hijos
+  HIJO_CON_PADRE: 0.15,           // 15% si tiene padre/madre viudo
+  HIJO_HUERFANO: 0.11,            // 11% si es huérfano de padre y madre
+  
+  // Madre/Padre de hijos de filiación no matrimonial
+  MADRE_PADRE_SIN_OTROS_HIJOS: 0.36,  // 36% si no hay otros hijos con derecho
+  MADRE_PADRE_CON_OTROS_HIJOS: 0.30,  // 30% si hay otros hijos con derecho
+  
+  // Padre/Madre (cuando no hay cónyuge, conviviente ni hijos)
+  PADRE_MADRE_SIN_OTROS: 0.15     // 15% cada uno (padre o madre)
 } as const;
+
+// ==========================================
+// TIPOS DE BENEFICIARIO EXTENDIDOS
+// ==========================================
+
+export type TipoBeneficiarioExtendido = 
+  | 'conyuge' 
+  | 'conviviente' 
+  | 'hijo' 
+  | 'hijo_huerfano'  // Huérfano de padre y madre
+  | 'padre' 
+  | 'madre'
+  | 'madre_no_matrimonial'  // Madre de hijo de filiación no matrimonial
+  | 'padre_no_matrimonial'; // Padre de hijo de filiación no matrimonial
 
 // ==========================================
 // PORCENTAJES DE PENSIÓN DE INVALIDEZ
@@ -1106,50 +1130,84 @@ export function calcularRVConAmbasClausulasInvalidez(
 
 /**
  * Calcula los porcentajes de pensión para cada beneficiario
- * según el Art. 58 del DL 3500
+ * según el Art. 58 del DL 3500 con prorrateo cuando excede 100%
+ * 
+ * PROCEDIMIENTO DE PRORRATEO:
+ * 1. Calcular porcentaje teórico de cada beneficiario
+ * 2. Sumar todos los porcentajes
+ * 3. Si supera 100%, aplicar factor de ajuste = 100 / suma_total
+ * 4. Cada beneficiario recibe: porcentaje_original × factor_ajuste
  */
 export function calcularPorcentajesBeneficiarios(
   beneficiarios: BeneficiarioPension[]
-): { tipo: string; porcentaje: number; edad: number; sexo: Sexo }[] {
-  const resultados: { tipo: string; porcentaje: number; edad: number; sexo: Sexo }[] = [];
+): { tipo: string; porcentaje: number; porcentajeOriginal: number; edad: number; sexo: Sexo; factorProrrateo: number }[] {
+  const resultados: { tipo: string; porcentaje: number; porcentajeOriginal: number; edad: number; sexo: Sexo; factorProrrateo: number }[] = [];
   
+  // Contar tipos de beneficiarios
   const tieneHijos = beneficiarios.some(b => b.tipo === 'hijo');
+  const cantidadHijos = beneficiarios.filter(b => b.tipo === 'hijo').length;
+  const tieneConyuge = beneficiarios.some(b => b.tipo === 'conyuge');
+  const tieneConviviente = beneficiarios.some(b => b.tipo === 'conviviente');
+  const tieneOtrosBeneficiarios = tieneConyuge || tieneConviviente || tieneHijos;
   
+  // Calcular porcentajes teóricos (sin prorrateo)
   for (const ben of beneficiarios) {
-    let porcentaje = 0;
+    let porcentajeOriginal = 0;
     
     switch (ben.tipo) {
       case 'conyuge':
-        porcentaje = tieneHijos 
+        // 60% sin hijos, 50% con hijos con derecho
+        porcentajeOriginal = tieneHijos 
           ? PORCENTAJES_SOBREVIVENCIA.CONYUGE_CON_HIJOS 
           : PORCENTAJES_SOBREVIVENCIA.CONYUGE_SIN_HIJOS;
         break;
+        
       case 'conviviente':
-        porcentaje = tieneHijos 
+        // 60% sin hijos, 50% con hijos con derecho
+        porcentajeOriginal = tieneHijos 
           ? PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_CON_HIJOS 
           : PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_SIN_HIJOS;
         break;
+        
       case 'hijo':
-        porcentaje = PORCENTAJES_SOBREVIVENCIA.HIJO;
+        // 15% si tiene padre/madre viudo, 11% si es huérfano de ambos
+        // Por ahora asumimos que tiene padre/madre (el caso de huérfano requiere info adicional)
+        porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.HIJO_CON_PADRE;
         break;
+        
       case 'padre':
       case 'madre':
-        const tieneConyugeOHijos = beneficiarios.some(
-          b => b.tipo === 'conyuge' || b.tipo === 'conviviente' || b.tipo === 'hijo'
-        );
-        if (!tieneConyugeOHijos) {
-          porcentaje = PORCENTAJES_SOBREVIVENCIA.PADRE_MADRE;
+        // Solo tienen derecho si no hay cónyuge, conviviente ni hijos
+        // 15% cada uno
+        if (!tieneOtrosBeneficiarios) {
+          porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.PADRE_MADRE_SIN_OTROS;
         }
         break;
     }
     
-    if (porcentaje > 0) {
+    if (porcentajeOriginal > 0) {
       resultados.push({
         tipo: ben.tipo,
-        porcentaje,
+        porcentaje: porcentajeOriginal, // Se ajustará después
+        porcentajeOriginal,
         edad: ben.edad,
-        sexo: ben.sexo
+        sexo: ben.sexo,
+        factorProrrateo: 1.0
       });
+    }
+  }
+  
+  // APLICAR PRORRATEO SI LA SUMA SUPERA EL 100%
+  const sumaPorcentajes = resultados.reduce((sum, r) => sum + r.porcentajeOriginal, 0);
+  
+  if (sumaPorcentajes > 1.0) {
+    // Factor de ajuste: 100% / suma_total
+    const factorProrrateo = 1.0 / sumaPorcentajes;
+    
+    // Aplicar factor a cada beneficiario
+    for (const r of resultados) {
+      r.porcentaje = r.porcentajeOriginal * factorProrrateo;
+      r.factorProrrateo = factorProrrateo;
     }
   }
   
@@ -1226,26 +1284,22 @@ export function calcularPensionSobrevivencia(
     pensionReferencia = fondosCausante / cnuCausante;
   }
   
-  // 2. Calcular porcentajes por beneficiario
+  // 2. Calcular porcentajes por beneficiario (YA INCLUYE PRORRATEO si excede 100%)
   const porcentajesBeneficiarios = calcularPorcentajesBeneficiarios(beneficiarios);
-  const porcentajeTotal = porcentajesBeneficiarios.reduce((sum, b) => sum + b.porcentaje, 0);
-  
-  // Si excede 100%, se ajusta proporcionalmente
-  const factorAjuste = porcentajeTotal > 1 ? 1 / porcentajeTotal : 1;
   
   // 3. Calcular CNU total de sobrevivencia
   const { cnuTotal, detallePorBeneficiario } = calcularCNUSobrevivencia(beneficiarios, tasaInteres);
   
-  // 4. Distribuir pensión por beneficiario
+  // 4. Distribuir pensión por beneficiario usando porcentajes YA AJUSTADOS
   const pensionPorBeneficiario: { tipo: string; porcentaje: number; pensionMensual: number }[] = [];
   
   for (const ben of porcentajesBeneficiarios) {
-    const porcentajeAjustado = ben.porcentaje * factorAjuste;
-    const pensionBeneficiario = pensionReferencia * porcentajeAjustado;
+    // El porcentaje YA incluye el prorrateo si corresponde
+    const pensionBeneficiario = pensionReferencia * ben.porcentaje;
     
     pensionPorBeneficiario.push({
       tipo: ben.tipo,
-      porcentaje: porcentajeAjustado,
+      porcentaje: ben.porcentaje,
       pensionMensual: Math.round(pensionBeneficiario)
     });
   }
