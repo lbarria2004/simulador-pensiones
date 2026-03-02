@@ -141,7 +141,7 @@ const TIPO_PENSION_LABELS: Record<string, string> = {
 
 // Etiquetas para tipo de beneficiario
 const TIPO_BENEFICIARIO_LABELS: Record<string, string> = {
-  conyuge: 'Cónyuge',
+  conyuge: 'Conyuge',
   conviviente: 'Conviviente',
   hijo: 'Hijo/a',
   padre: 'Padre',
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
 
     // Crear documento PDF
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([612, 792]); // Letter size
+    let page = pdfDoc.addPage([612, 792]); // Letter size - CAMBIADO A let
     
     // Fuentes
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -175,15 +175,21 @@ export async function POST(request: NextRequest) {
 
     let y = 750;
 
+    // Funcion helper para crear nueva pagina
+    const nuevaPagina = () => {
+      page = pdfDoc.addPage([612, 792]);
+      y = 750;
+    };
+
     // Determinar tipo de pensión
     const tipoPension = afiliado.tipoPension || 'vejez';
 
     // Título según tipo de pensión
     const tituloPension = tipoPension === 'invalidez' 
-      ? 'ESTUDIO PRELIMINAR DE PENSIÓN DE INVALIDEZ'
+      ? 'ESTUDIO PRELIMINAR DE PENSION DE INVALIDEZ'
       : tipoPension === 'sobrevivencia'
-      ? 'ESTUDIO PRELIMINAR DE PENSIÓN DE SOBREVIVENCIA'
-      : 'ESTUDIO PRELIMINAR DE PENSIÓN';
+      ? 'ESTUDIO PRELIMINAR DE PENSION DE SOBREVIVENCIA'
+      : 'ESTUDIO PRELIMINAR DE PENSION';
 
     drawText(page, tituloPension, 150, y, { 
       size: 16, 
@@ -204,13 +210,12 @@ export async function POST(request: NextRequest) {
 
     // Info básica
     const fondosUF = Math.round(afiliado.fondosAcumulados / parametros.uf);
-    const edadJubilacion = afiliado.sexo === 'M' ? 65 : 60;
 
     drawText(page, `Valor UF Utilizado: $${formatNumber(parametros.uf)}`, 50, y, { size: 10, font: fontRegular });
     y -= 15;
-    drawText(page, `Edad: ${afiliado.edad} años`, 50, y, { size: 10, font: fontRegular });
+    drawText(page, `Edad: ${afiliado.edad} anos`, 50, y, { size: 10, font: fontRegular });
     y -= 15;
-    drawText(page, `Tipo de Pensión: ${TIPO_PENSION_LABELS[tipoPension]}`, 50, y, { size: 10, font: fontRegular });
+    drawText(page, `Tipo de Pension: ${TIPO_PENSION_LABELS[tipoPension]}`, 50, y, { size: 10, font: fontRegular });
     y -= 15;
     drawText(page, `Saldo Acumulado (Bruto): ${fondosUF} UF`, 50, y, { size: 10, font: fontRegular });
     y -= 20;
@@ -255,7 +260,7 @@ export async function POST(request: NextRequest) {
         const pensionLiquida = pensionBruto - descuentoAFP - descuentoSalud;
 
         const rpData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Desc. 0.95%', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Desc. 0.95%', 'Dscto. 7% Salud', 'Pension Liquida'],
           ['RETIRO PROGRAMADO', `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoAFP)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [110, 70, 90, 70, 80, 85];
@@ -273,7 +278,7 @@ export async function POST(request: NextRequest) {
         });
         y -= 15;
         const tasaRVPct = (rvInmediata.tasaInteres * 100).toFixed(2);
-        drawText(page, `Cálculo RVI: Tasa de Venta: Media Mercado (Vejez: ${tasaRVPct}%)`, 50, y, { size: 9, font: fontRegular });
+        drawText(page, `Calculo RVI: Tasa de Venta: Media Mercado (Vejez: ${tasaRVPct}%)`, 50, y, { size: 9, font: fontRegular });
         y -= 20;
 
         const pensionBruto = rvInmediata.pensionMensual;
@@ -284,9 +289,9 @@ export async function POST(request: NextRequest) {
         const pensionConPGU = pensionLiquida + pguMonto;
 
         const rviData = [
-          ['Modalidad', 'Tasa (%)', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Tasa (%)', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           ['RVI SIMPLE (Media Mercado)', `${tasaRVPct}%`, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`],
-          ['Pensión + PGU ($224.004)', '', '', '', '', `$${formatNumber(pensionConPGU)}`]
+          ['Pension + PGU ($224.004)', '', '', '', '', `$${formatNumber(pensionConPGU)}`]
         ];
         const colWidths = [120, 55, 70, 85, 75, 85];
         y = drawTable(page, rviData, 50, y, colWidths, { regular: fontRegular, bold: fontBold });
@@ -298,22 +303,21 @@ export async function POST(request: NextRequest) {
       for (const rv of rvSoloGarantia) {
         // Verificar si necesitamos nueva página
         if (y < 150) {
-          const newPage = pdfDoc.addPage([612, 792]);
-          y = 750;
+          nuevaPagina();
         }
         
         const meses = rv.periodoGarantizado || 0;
         const anos = Math.floor(meses / 12);
         const mesesRestantes = meses % 12;
-        const garantiaTxt = mesesRestantes > 0 ? `${anos}a ${mesesRestantes}m` : `${anos} años`;
+        const garantiaTxt = mesesRestantes > 0 ? `${anos}a ${mesesRestantes}m` : `${anos} anos`;
         
-        drawText(page, `${numSeccion}. RV con Garantía ${garantiaTxt} (${meses} meses)`, 50, y, { 
+        drawText(page, `${numSeccion}. RV con Garantia ${garantiaTxt} (${meses} meses)`, 50, y, { 
           size: 11, 
           font: fontBold, 
           color: { r: 0.122, g: 0.306, b: 0.475 } 
         });
         y -= 15;
-        drawText(page, `Si fallece antes del período, beneficiarios reciben el 100% de la pensión`, 50, y, { size: 9, font: fontRegular });
+        drawText(page, `Si fallece antes del periodo, beneficiarios reciben el 100% de la pension`, 50, y, { size: 9, font: fontRegular });
         y -= 20;
 
         const pensionBruto = rv.pensionMensual;
@@ -325,9 +329,9 @@ export async function POST(request: NextRequest) {
         const tasa = (rv.tasaInteres * 100).toFixed(2);
 
         const rvgData = [
-          ['Modalidad', 'Tasa (%)', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Tasa (%)', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [`RV GARANTIZADA ${garantiaTxt}`, `${tasa}%`, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`],
-          ['Pensión + PGU ($224.004)', '', '', '', '', `$${formatNumber(pensionConPGU)}`]
+          ['Pension + PGU ($224.004)', '', '', '', '', `$${formatNumber(pensionConPGU)}`]
         ];
         const colWidths = [120, 55, 70, 85, 75, 85];
         y = drawTable(page, rvgData, 50, y, colWidths, { regular: fontRegular, bold: fontBold });
@@ -339,19 +343,18 @@ export async function POST(request: NextRequest) {
       for (const rv of rvConAumento) {
         // Verificar si necesitamos nueva página (más espacio para este escenario)
         if (y < 220) {
-          const newPage = pdfDoc.addPage([612, 792]);
-          y = 750;
+          nuevaPagina();
         }
         
         const mesesAumento = rv.aumentoTemporal?.meses || 0;
         const anosAumento = Math.floor(mesesAumento / 12);
         const mesesRestantesAumento = mesesAumento % 12;
-        const aumentoTxt = mesesRestantesAumento > 0 ? `${anosAumento}a ${mesesRestantesAumento}m` : `${anosAumento} años`;
+        const aumentoTxt = mesesRestantesAumento > 0 ? `${anosAumento}a ${mesesRestantesAumento}m` : `${anosAumento} anos`;
         
         const tieneGarantia = rv.periodoGarantizado && rv.periodoGarantizado > 0;
         const mesesGarantia = rv.periodoGarantizado || 0;
         const anosGarantia = Math.floor(mesesGarantia / 12);
-        const garantiaTxt = tieneGarantia ? ` + Garantía ${anosGarantia} años` : '';
+        const garantiaTxt = tieneGarantia ? ` + Garantia ${anosGarantia} anos` : '';
         
         const porcentajeAumento = rv.aumentoTemporal?.porcentaje || 0;
         const porcentajeTxt = porcentajeAumento > 1 ? porcentajeAumento : porcentajeAumento * 100;
@@ -366,7 +369,7 @@ export async function POST(request: NextRequest) {
         drawText(page, `Aumento: ${porcentajeTxt}% por ${aumentoTxt}${garantiaTxt}`, 50, y, { size: 9, font: fontRegular });
         y -= 18;
         if (tieneGarantia) {
-          drawText(page, `Período garantizado: ${anosGarantia} años - Si fallece, beneficiarios reciben el 100%`, 50, y, { size: 8, font: fontRegular, color: { r: 0.3, g: 0.3, b: 0.3 } });
+          drawText(page, `Periodo garantizado: ${anosGarantia} anos - Si fallece, beneficiarios reciben el 100%`, 50, y, { size: 8, font: fontRegular, color: { r: 0.3, g: 0.3, b: 0.3 } });
           y -= 15;
         }
 
@@ -385,7 +388,7 @@ export async function POST(request: NextRequest) {
         const pensionBaseConPGU = pensionBaseLiq + 224004;
 
         // TABLA 1: PENSIÓN DURANTE EL AUMENTO
-        drawText(page, '>>> PENSIÓN DURANTE EL PERÍODO DE AUMENTO:', 50, y, { 
+        drawText(page, '>>> PENSION DURANTE EL PERIODO DE AUMENTO:', 50, y, { 
           size: 10, 
           font: fontBold, 
           color: { r: 0.2, g: 0.5, b: 0.2 } 
@@ -393,7 +396,7 @@ export async function POST(request: NextRequest) {
         y -= 15;
         
         const tablaAumento = [
-          ['Pensión (UF)', 'Pensión Mensual Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Pension (UF)', 'Pension Mensual Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [`${pensionAumentadaUF} UF`, `$${formatNumber(pensionAumentada)}`, `-$${formatNumber(descSaludAum)}`, `$${formatNumber(pensionAumentadaLiq)}`]
         ];
         const colWidthsAum = [80, 120, 100, 100];
@@ -418,7 +421,7 @@ export async function POST(request: NextRequest) {
         y -= 15;
 
         // TABLA 2: PENSIÓN DESPUÉS DEL AUMENTO
-        drawText(page, '>>> PENSIÓN DESPUÉS DEL PERÍODO DE AUMENTO:', 50, y, { 
+        drawText(page, '>>> PENSION DESPUES DEL PERIODO DE AUMENTO:', 50, y, { 
           size: 10, 
           font: fontBold, 
           color: { r: 0.6, g: 0.2, b: 0.2 } 
@@ -426,7 +429,7 @@ export async function POST(request: NextRequest) {
         y -= 15;
         
         const tablaBase = [
-          ['Pensión (UF)', 'Pensión Mensual Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Pension (UF)', 'Pension Mensual Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [`${pensionBaseUF} UF`, `$${formatNumber(pensionBase)}`, `-$${formatNumber(descSaludBase)}`, `$${formatNumber(pensionBaseLiq)}`]
         ];
         const colWidthsBase = [80, 120, 100, 100];
@@ -443,7 +446,7 @@ export async function POST(request: NextRequest) {
         // Resumen de diferencia
         const diferencia = pensionAumentadaLiq - pensionBaseLiq;
         const porcentajeDiferencia = ((diferencia / pensionBaseLiq) * 100).toFixed(1);
-        drawText(page, `Diferencia: $${formatNumber(diferencia)}/menos (${porcentajeDiferencia}% menos después del aumento)`, 50, y, { 
+        drawText(page, `Diferencia: $${formatNumber(diferencia)}/menos (${porcentajeDiferencia}% menos despues del aumento)`, 50, y, { 
           size: 8, 
           font: fontRegular, 
           color: { r: 0.5, g: 0.5, b: 0.5 } 
@@ -457,9 +460,9 @@ export async function POST(request: NextRequest) {
     if (tipoPension === 'invalidez') {
       const retiroProgramado = resultados.find(r => r.nombre.includes('Retiro Programado'));
       const rvInmediata = resultados.find(r => r.nombre.includes('RV Inmediata') && r.nombre.includes('Invalidez'));
-      const rvGarantizados = resultados.filter(r => r.nombre.includes('RV Invalidez Garantía'));
+      const rvGarantizados = resultados.filter(r => r.nombre.includes('RV Invalidez Garantia'));
       const rvAumentos = resultados.filter(r => r.nombre.includes('RV Invalidez +') && r.nombre.includes('x'));
-      const pensionInvalidez = resultados.find(r => r.nombre.includes('Pensión Invalidez'));
+      const pensionInvalidez = resultados.find(r => r.nombre.includes('Pension Invalidez'));
 
       // Información del grado de invalidez
       if (afiliado.gradoInvalidez || pensionInvalidez?.gradoInvalidez) {
@@ -480,7 +483,7 @@ export async function POST(request: NextRequest) {
           color: { r: 0.122, g: 0.306, b: 0.475 } 
         });
         y -= 15;
-        drawText(page, '(Usa tabla de mortalidad de inválidos I-H/I-M-2020)', 50, y, { size: 9, font: fontRegular });
+        drawText(page, '(Usa tabla de mortalidad de invalidos I-H/I-M-2020)', 50, y, { size: 9, font: fontRegular });
         y -= 20;
 
         const pensionBruto = retiroProgramado.pensionMensual;
@@ -490,7 +493,7 @@ export async function POST(request: NextRequest) {
         const pensionLiquida = pensionBruto - descuentoAFP - descuentoSalud;
 
         const rpData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Desc. 0.95%', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Desc. 0.95%', 'Dscto. 7% Salud', 'Pension Liquida'],
           ['RP INVALIDEZ', `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoAFP)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [110, 70, 90, 70, 80, 85];
@@ -505,7 +508,7 @@ export async function POST(request: NextRequest) {
           color: { r: 0.122, g: 0.306, b: 0.475 } 
         });
         y -= 15;
-        drawText(page, `Tasa: ${(rvInmediata.tasaInteres * 100).toFixed(2)}% - Tabla de inválidos`, 50, y, { size: 9, font: fontRegular });
+        drawText(page, `Tasa: ${(rvInmediata.tasaInteres * 100).toFixed(2)}% - Tabla de invalidos`, 50, y, { size: 9, font: fontRegular });
         y -= 20;
 
         const pensionBruto = rvInmediata.pensionMensual;
@@ -514,7 +517,7 @@ export async function POST(request: NextRequest) {
         const pensionLiquida = pensionBruto - descuentoSalud;
 
         const rvData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           ['RV INMEDIATA INVALIDEZ', `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [130, 80, 100, 90, 100];
@@ -528,7 +531,7 @@ export async function POST(request: NextRequest) {
         const meses = rv.periodoGarantizado || 0;
         const anos = Math.floor(meses / 12);
 
-        drawText(page, `${num}. RV Invalidez con Garantía ${anos} años`, 50, y, { 
+        drawText(page, `${num}. RV Invalidez con Garantia ${anos} anos`, 50, y, { 
           size: 11, 
           font: fontBold, 
           color: { r: 0.122, g: 0.306, b: 0.475 } 
@@ -541,8 +544,8 @@ export async function POST(request: NextRequest) {
         const pensionLiquida = pensionBruto - descuentoSalud;
 
         const rvgData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
-          [`RV GARANTÍA ${anos} AÑOS`, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
+          [`RV GARANTIA ${anos} ANOS`, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [130, 80, 100, 90, 100];
         y = drawTable(page, rvgData, 50, y, colWidths, { regular: fontRegular, bold: fontBold });
@@ -562,7 +565,7 @@ export async function POST(request: NextRequest) {
           color: { r: 0.122, g: 0.306, b: 0.475 } 
         });
         y -= 15;
-        drawText(page, `Aumento ${rv.aumentoTemporal?.porcentaje || 0}% por ${anosAumento} años`, 50, y, { size: 9, font: fontRegular });
+        drawText(page, `Aumento ${rv.aumentoTemporal?.porcentaje || 0}% por ${anosAumento} anos`, 50, y, { size: 9, font: fontRegular });
         y -= 20;
 
         const pensionBruto = rv.pensionMensual;
@@ -576,9 +579,9 @@ export async function POST(request: NextRequest) {
         const pensionBaseLiq = pensionBase - descBase;
 
         const rvaData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [`RV AUMENTADA ${meses} MESES`, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`],
-          [`PENSIÓN BASE (desde mes ${meses + 1})`, `${pensionBaseUF} UF`, `$${formatNumber(pensionBase)}`, `-$${formatNumber(descBase)}`, `$${formatNumber(pensionBaseLiq)}`]
+          [`PENSION BASE (desde mes ${meses + 1})`, `${pensionBaseUF} UF`, `$${formatNumber(pensionBase)}`, `-$${formatNumber(descBase)}`, `$${formatNumber(pensionBaseLiq)}`]
         ];
         const colWidths = [140, 70, 100, 90, 100];
         y = drawTable(page, rvaData, 50, y, colWidths, { regular: fontRegular, bold: fontBold });
@@ -587,7 +590,7 @@ export async function POST(request: NextRequest) {
       // Pensión de Invalidez básica (si no hay escenarios RV)
       if (pensionInvalidez && resultados.length === 1) {
         const num = retiroProgramado ? 2 : 1;
-        drawText(page, `${num}. Pensión de Invalidez`, 50, y, { 
+        drawText(page, `${num}. Pension de Invalidez`, 50, y, { 
           size: 11, 
           font: fontBold, 
           color: { r: 0.122, g: 0.306, b: 0.475 } 
@@ -604,7 +607,7 @@ export async function POST(request: NextRequest) {
         const pensionLiquida = pensionBruto - descuentoSalud;
 
         const invData = [
-          ['Grado', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Grado', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [GRADO_INVALIDEZ_LABELS[grado] || grado, `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [100, 80, 100, 90, 100];
@@ -615,7 +618,7 @@ export async function POST(request: NextRequest) {
           y -= 5;
           for (const adv of pensionInvalidez.advertencias) {
             if (y < 100) break;
-            drawText(page, `• ${adv}`, 50, y, { size: 8, font: fontRegular, color: { r: 0.4, g: 0.4, b: 0.4 } });
+            drawText(page, `- ${adv}`, 50, y, { size: 8, font: fontRegular, color: { r: 0.4, g: 0.4, b: 0.4 } });
             y -= 12;
           }
         }
@@ -632,7 +635,7 @@ export async function POST(request: NextRequest) {
         for (const ben of beneficiarios) {
           if (y < 100) break;
           const tipoLabel = TIPO_BENEFICIARIO_LABELS[ben.tipo] || ben.tipo;
-          drawText(page, `• ${tipoLabel}: ${ben.edad} años, ${(ben.porcentajePension * 100).toFixed(0)}% de pensión`, 60, y, { size: 9, font: fontRegular });
+          drawText(page, `- ${tipoLabel}: ${ben.edad} anos, ${(ben.porcentajePension * 100).toFixed(0)}% de pension`, 60, y, { size: 9, font: fontRegular });
           y -= 12;
         }
         y -= 10;
@@ -642,9 +645,7 @@ export async function POST(request: NextRequest) {
       let contador = 1;
       for (const resultado of resultados) {
         if (y < 150) {
-          // Crear nueva página si es necesario
-          const newPage = pdfDoc.addPage([612, 792]);
-          y = 750;
+          nuevaPagina();
         }
 
         const pensionBruto = resultado.pensionMensual;
@@ -660,7 +661,7 @@ export async function POST(request: NextRequest) {
         y -= 20;
 
         const sobData = [
-          ['Modalidad', 'Pensión (UF)', 'Pensión M. Bruto', 'Dscto. 7% Salud', 'Pensión Líquida'],
+          ['Modalidad', 'Pension (UF)', 'Pension M. Bruto', 'Dscto. 7% Salud', 'Pension Liquida'],
           [resultado.nombre.substring(0, 25), `${pensionUF} UF`, `$${formatNumber(pensionBruto)}`, `-$${formatNumber(descuentoSalud)}`, `$${formatNumber(pensionLiquida)}`]
         ];
         const colWidths = [130, 70, 100, 90, 90];
@@ -669,11 +670,11 @@ export async function POST(request: NextRequest) {
         // Pensión por beneficiario
         if (resultado.pensionPorBeneficiario && resultado.pensionPorBeneficiario.length > 0) {
           y -= 5;
-          drawText(page, 'Distribución por Beneficiario:', 50, y, { size: 9, font: fontBold });
+          drawText(page, 'Distribucion por Beneficiario:', 50, y, { size: 9, font: fontBold });
           y -= 15;
 
           const benData = [
-            ['Beneficiario', 'Porcentaje', 'Pensión Mensual'],
+            ['Beneficiario', 'Porcentaje', 'Pension Mensual'],
             ...resultado.pensionPorBeneficiario.map(b => [
               TIPO_BENEFICIARIO_LABELS[b.tipo] || b.tipo,
               `${(b.porcentaje * 100).toFixed(0)}%`,
@@ -690,20 +691,20 @@ export async function POST(request: NextRequest) {
 
     // Notas finales
     y = Math.min(y, 100);
-    drawText(page, 'NOTA: VALORES ESTIMATIVOS NO CONSTITUYEN UNA OFERTA FORMAL DE PENSIÓN.', 50, y, { size: 7, font: fontRegular });
+    drawText(page, 'NOTA: VALORES ESTIMATIVOS NO CONSTITUYEN UNA OFERTA FORMAL DE PENSION.', 50, y, { size: 7, font: fontRegular });
     y -= 12;
-    drawText(page, 'LA PGU SE SOLICITA A LOS 65 AÑOS, REQUISITO TENER REGISTRO SOCIAL DE HOGARES.', 50, y, { size: 7, font: fontRegular });
+    drawText(page, 'LA PGU SE SOLICITA A LOS 65 ANOS, REQUISITO TENER REGISTRO SOCIAL DE HOGARES.', 50, y, { size: 7, font: fontRegular });
     y -= 12;
-    drawText(page, 'BONIFICACIÓN POR AÑO COTIZADO: 0.1 UF POR AÑO COTIZADO.', 50, y, { size: 7, font: fontRegular });
+    drawText(page, 'BONIFICACION POR ANO COTIZADO: 0.1 UF POR ANO COTIZADO.', 50, y, { size: 7, font: fontRegular });
     
     if (tipoPension === 'invalidez') {
       y -= 12;
-      drawText(page, 'PENSIÓN DE INVALIDEZ: REQUIERE DICTAMEN DE COMISIÓN MÉDICA.', 50, y, { size: 7, font: fontRegular });
+      drawText(page, 'PENSION DE INVALIDEZ: REQUIERE DICTAMEN DE COMISION MEDICA.', 50, y, { size: 7, font: fontRegular });
     }
     
     if (tipoPension === 'sobrevivencia') {
       y -= 12;
-      drawText(page, 'PENSIÓN DE SOBREVIVENCIA: PORCENTAJES SEGÚN ART. 58 DL 3500.', 50, y, { size: 7, font: fontRegular });
+      drawText(page, 'PENSION DE SOBREVIVENCIA: PORCENTAJES SEGUN ART. 58 DL 3500.', 50, y, { size: 7, font: fontRegular });
     }
 
     // Guardar PDF
@@ -711,7 +712,7 @@ export async function POST(request: NextRequest) {
 
     // Nombre del archivo
     const nombreLimpio = nombreAfiliado
-      .replace(/[^A-ZÁÉÍÓÚÑ\s]/g, '')
+      .replace(/[^A-Z\s]/g, '')
       .replace(/\s+/g, '_')
       .trim();
     const tipoSuffix = tipoPension === 'vejez' ? '' : `_${tipoPension}`;
