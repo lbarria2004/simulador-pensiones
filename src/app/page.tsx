@@ -310,13 +310,32 @@ export default function SimuladorPensiones() {
     }))
   }, [])
 
-  // Validar que los porcentajes no excedan 100%
+  // Verificar si hay beneficiarios para pensión de sobrevivencia
   const validarBeneficiarios = (): string | null => {
+    // Para sobrevivencia, debe haber al menos un beneficiario
+    if (formData.tipoPension === 'sobrevivencia' && formData.beneficiarios.length === 0) {
+      return 'Debe agregar al menos un beneficiario para pensión de sobrevivencia'
+    }
+    // NOTA: Cuando los porcentajes superan el 100%, se aplica PRORRATEO automáticamente
+    // según el Art. 58 del DL 3500. No es un error, es una regla normativa.
+    return null
+  }
+
+  // Verificar si se aplicará prorrateo (informativo, no bloquea)
+  const calcularInfoProrrateo = (): { aplicaProrrateo: boolean; totalPorcentaje: number; factorProrrateo: number } => {
     const totalPorcentaje = formData.beneficiarios.reduce((sum, b) => sum + b.porcentajePension, 0)
     if (totalPorcentaje > 1) {
-      return `El total de porcentajes (${(totalPorcentaje * 100).toFixed(0)}%) excede el 100%`
+      return {
+        aplicaProrrateo: true,
+        totalPorcentaje,
+        factorProrrateo: 1 / totalPorcentaje
+      }
     }
-    return null
+    return {
+      aplicaProrrateo: false,
+      totalPorcentaje,
+      factorProrrateo: 1
+    }
   }
 
   // Obtener tasas activas
@@ -347,7 +366,7 @@ export default function SimuladorPensiones() {
     try {
       const escenariosCalculados: ResultadoEscenario[] = []
 
-      // Validar beneficiarios
+      // Validar beneficiarios (solo errores reales, el prorrateo NO es error)
       const errorBeneficiarios = validarBeneficiarios()
       if (errorBeneficiarios) {
         setError(errorBeneficiarios)
@@ -1398,15 +1417,39 @@ export default function SimuladorPensiones() {
                         </div>
                       ))}
                     </div>
-                    <div className="flex items-center justify-between text-xs pt-2 border-t">
-                      <span className="text-muted-foreground">Total asignado:</span>
-                      <span className={`font-medium ${
-                        formData.beneficiarios.reduce((sum, b) => sum + b.porcentajePension, 0) > 1 
-                          ? 'text-red-600' 
-                          : 'text-green-600'
-                      }`}>
-                        {(formData.beneficiarios.reduce((sum, b) => sum + b.porcentajePension, 0) * 100).toFixed(0)}%
-                      </span>
+                    <div className="space-y-2 pt-2 border-t">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Total asignado:</span>
+                        <span className={`font-medium ${
+                          formData.beneficiarios.reduce((sum, b) => sum + b.porcentajePension, 0) > 1 
+                            ? 'text-amber-600' 
+                            : 'text-green-600'
+                        }`}>
+                          {(formData.beneficiarios.reduce((sum, b) => sum + b.porcentajePension, 0) * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      
+                      {/* Alerta de Prorrateo */}
+                      {(() => {
+                        const infoProrrateo = calcularInfoProrrateo()
+                        if (infoProrrateo.aplicaProrrateo) {
+                          return (
+                            <Alert className="py-2 px-3 bg-amber-50 border-amber-200">
+                              <AlertTriangle className="h-3 w-3 text-amber-600" />
+                              <AlertDescription className="text-xs text-amber-700">
+                                <strong>Se aplicará PRORRATEO automático</strong>
+                                <br />
+                                Total: {(infoProrrateo.totalPorcentaje * 100).toFixed(0)}% → Ajustado: 100%
+                                <br />
+                                <span className="text-[10px]">
+                                  Factor: {(infoProrrateo.factorProrrateo * 100).toFixed(2)}% (Art. 58 DL 3500)
+                                </span>
+                              </AlertDescription>
+                            </Alert>
+                          )
+                        }
+                        return null
+                      })()}
                     </div>
                   </>
                 )}

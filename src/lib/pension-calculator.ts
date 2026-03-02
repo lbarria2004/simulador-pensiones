@@ -1143,52 +1143,49 @@ export function calcularPorcentajesBeneficiarios(
 ): { tipo: string; porcentaje: number; porcentajeOriginal: number; edad: number; sexo: Sexo; factorProrrateo: number }[] {
   const resultados: { tipo: string; porcentaje: number; porcentajeOriginal: number; edad: number; sexo: Sexo; factorProrrateo: number }[] = [];
   
-  // Contar tipos de beneficiarios
+  // Contar tipos de beneficiarios para validar reglas
   const tieneHijos = beneficiarios.some(b => b.tipo === 'hijo');
-  const cantidadHijos = beneficiarios.filter(b => b.tipo === 'hijo').length;
   const tieneConyuge = beneficiarios.some(b => b.tipo === 'conyuge');
   const tieneConviviente = beneficiarios.some(b => b.tipo === 'conviviente');
   const tieneOtrosBeneficiarios = tieneConyuge || tieneConviviente || tieneHijos;
   
-  // Calcular porcentajes teóricos (sin prorrateo)
+  // Usar los porcentajes asignados por el usuario (porcentajePension)
+  // Si el usuario no asignó porcentaje, usar el teórico según normativa
   for (const ben of beneficiarios) {
-    let porcentajeOriginal = 0;
+    let porcentajeOriginal = ben.porcentajePension; // Usar el porcentaje asignado por el usuario
     
-    switch (ben.tipo) {
-      case 'conyuge':
-        // 60% sin hijos, 50% con hijos con derecho
-        porcentajeOriginal = tieneHijos 
-          ? PORCENTAJES_SOBREVIVENCIA.CONYUGE_CON_HIJOS 
-          : PORCENTAJES_SOBREVIVENCIA.CONYUGE_SIN_HIJOS;
-        break;
-        
-      case 'conviviente':
-        // 60% sin hijos, 50% con hijos con derecho
-        porcentajeOriginal = tieneHijos 
-          ? PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_CON_HIJOS 
-          : PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_SIN_HIJOS;
-        break;
-        
-      case 'hijo':
-        // 15% si tiene padre/madre viudo, 11% si es huérfano de ambos
-        // Por ahora asumimos que tiene padre/madre (el caso de huérfano requiere info adicional)
-        porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.HIJO_CON_PADRE;
-        break;
-        
-      case 'padre':
-      case 'madre':
-        // Solo tienen derecho si no hay cónyuge, conviviente ni hijos
-        // 15% cada uno
-        if (!tieneOtrosBeneficiarios) {
-          porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.PADRE_MADRE_SIN_OTROS;
-        }
-        break;
+    // Si el usuario no asignó porcentaje (es 0), calcular el teórico según normativa
+    if (!porcentajeOriginal || porcentajeOriginal === 0) {
+      switch (ben.tipo) {
+        case 'conyuge':
+          porcentajeOriginal = tieneHijos 
+            ? PORCENTAJES_SOBREVIVENCIA.CONYUGE_CON_HIJOS 
+            : PORCENTAJES_SOBREVIVENCIA.CONYUGE_SIN_HIJOS;
+          break;
+          
+        case 'conviviente':
+          porcentajeOriginal = tieneHijos 
+            ? PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_CON_HIJOS 
+            : PORCENTAJES_SOBREVIVENCIA.CONVIVIENTE_SIN_HIJOS;
+          break;
+          
+        case 'hijo':
+          porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.HIJO_CON_PADRE;
+          break;
+          
+        case 'padre':
+        case 'madre':
+          if (!tieneOtrosBeneficiarios) {
+            porcentajeOriginal = PORCENTAJES_SOBREVIVENCIA.PADRE_MADRE_SIN_OTROS;
+          }
+          break;
+      }
     }
     
     if (porcentajeOriginal > 0) {
       resultados.push({
         tipo: ben.tipo,
-        porcentaje: porcentajeOriginal, // Se ajustará después
+        porcentaje: porcentajeOriginal, // Se ajustará después si hay prorrateo
         porcentajeOriginal,
         edad: ben.edad,
         sexo: ben.sexo,
