@@ -16,7 +16,8 @@ interface ParametrosData {
   uf: number;
   tasaRP: number;
   tasaRV: number;
-  incluirBeneficiosAdicionales?: boolean;
+  incluirPGU?: boolean;
+  incluirBAC?: boolean;
   mesesAdicionalesBAC?: number;
 }
 
@@ -699,45 +700,43 @@ export async function POST(request: NextRequest) {
 
     // ========== BENEFICIOS ADICIONALES (PGU y BAC) ==========
     // Obtener parámetros de beneficios adicionales del body
-    const incluirBeneficiosAdicionales = body.incluirBeneficiosAdicionales || false;
+    const incluirPGU = body.incluirPGU || false;
+    const incluirBAC = body.incluirBAC || false;
     const mesesAdicionalesBAC = body.mesesAdicionalesBAC || 0;
 
-    if (incluirBeneficiosAdicionales) {
-      if (y < 180) {
+    // Obtener la pensión más alta para cálculos
+    const mejorPension = resultados.length > 0 
+      ? Math.max(...resultados.map(r => r.pensionMensual)) 
+      : 0;
+
+    // Variables para almacenar montos calculados
+    let pguMonto = 0;
+    let pguAplica = false;
+    let bacUF = 0;
+    let bacPesos = 0;
+
+    // ===== PGU - Pensión Garantizada Universal =====
+    if (incluirPGU) {
+      if (y < 150) {
         nuevaPagina();
       }
 
       y -= 10;
       drawText(page, '==============================================', 50, y, { size: 10, font: fontBold });
       y -= 15;
-      drawText(page, 'BENEFICIOS ADICIONALES', 50, y, { 
+      drawText(page, 'PGU - PENSION GARANTIZADA UNIVERSAL', 50, y, { 
         size: 12, 
         font: fontBold, 
         color: { r: 0.102, g: 0.212, b: 0.365 } 
       });
       y -= 20;
 
-      // Obtener la pensión más alta para calcular PGU
-      const mejorPension = resultados.length > 0 
-        ? Math.max(...resultados.map(r => r.pensionMensual)) 
-        : 0;
-
-      // ===== PGU - Pensión Garantizada Universal =====
-      drawText(page, '1. PGU - Pension Garantizada Universal', 50, y, { 
-        size: 10, 
-        font: fontBold, 
-        color: { r: 0.122, g: 0.306, b: 0.475 } 
-      });
-      y -= 15;
       drawText(page, `Monto Base 2025: $${formatNumber(PGU_MONTO)}/mes`, 50, y, { size: 9, font: fontRegular });
       y -= 12;
       drawText(page, `Tope de Ingreso: $${formatNumber(PGU_TOPE)}/mes`, 50, y, { size: 9, font: fontRegular });
       y -= 15;
 
       // Calcular PGU
-      let pguMonto = 0;
-      let pguAplica = false;
-      
       if (afiliado.edad >= 65 && mejorPension < PGU_TOPE) {
         pguAplica = true;
         const factor = mejorPension / PGU_TOPE;
@@ -769,24 +768,33 @@ export async function POST(request: NextRequest) {
         }
       }
       y -= 10;
+    }
 
-      // ===== BAC - Bono por Años Cotizados =====
-      drawText(page, '2. BAC - Bono por Anos Cotizados', 50, y, { 
-        size: 10, 
-        font: fontBold, 
-        color: { r: 0.122, g: 0.306, b: 0.475 } 
-      });
+    // ===== BAC - Bono por Años Cotizados =====
+    if (incluirBAC) {
+      if (y < 180) {
+        nuevaPagina();
+      }
+
+      y -= 10;
+      drawText(page, '==============================================', 50, y, { size: 10, font: fontBold });
       y -= 15;
+      drawText(page, 'BAC - BONO POR ANOS COTIZADOS', 50, y, { 
+        size: 12, 
+        font: fontBold, 
+        color: { r: 0.1, g: 0.4, b: 0.2 } 
+      });
+      y -= 20;
       
       const anosTotalesBAC = afiliado.anosCotizados + (mesesAdicionalesBAC / 12);
-      let bacUF = anosTotalesBAC * BAC_UF_POR_ANO;
+      bacUF = anosTotalesBAC * BAC_UF_POR_ANO;
       const topeAplicado = bacUF > BAC_TOPE_UF;
       
       if (topeAplicado) {
         bacUF = BAC_TOPE_UF;
       }
       
-      const bacPesos = Math.round(bacUF * parametros.uf);
+      bacPesos = Math.round(bacUF * parametros.uf);
       
       drawText(page, `Anos cotizados: ${afiliado.anosCotizados} anos`, 50, y, { size: 9, font: fontRegular });
       y -= 12;
@@ -816,22 +824,33 @@ export async function POST(request: NextRequest) {
       y = drawTable(page, bacData, 50, y, colWidthsBAC, { regular: fontRegular, bold: fontBold });
       y -= 15;
 
-      // ===== RESUMEN TOTAL =====
-      if (pguAplica || anosTotalesBAC > 0) {
+      drawText(page, 'NOTA: El BAC se devenga desde el 1 de enero de 2026.', 50, y, { 
+        size: 7, font: fontRegular, color: { r: 0.4, g: 0.4, b: 0.4 } 
+      });
+      y -= 10;
+    }
+
+    // ===== RESUMEN TOTAL (si alguno aplica) =====
+    if (incluirPGU || incluirBAC) {
+      if (pguAplica || bacPesos > 0) {
+        if (y < 100) {
+          nuevaPagina();
+        }
+
         const totalBeneficios = pguMonto + bacPesos;
         const pensionTotalConBeneficios = mejorPension + totalBeneficios;
 
-        y -= 5;
+        y -= 10;
         page.drawRectangle({
           x: 50,
           y: y - 5,
           width: 500,
-          height: 45,
+          height: 50,
           color: rgb(0.95, 0.98, 0.95),
           borderColor: rgb(0.2, 0.5, 0.2),
           borderWidth: 1,
         });
-        y += 35;
+        y += 40;
         
         drawText(page, 'RESUMEN TOTAL CON BENEFICIOS ADICIONALES', 60, y, { 
           size: 9, font: fontBold, color: { r: 0.1, g: 0.35, b: 0.15 } 
@@ -846,12 +865,6 @@ export async function POST(request: NextRequest) {
         });
         y -= 20;
       }
-
-      y -= 10;
-      drawText(page, 'NOTA: El BAC se devenga desde el 1 de enero de 2026.', 50, y, { 
-        size: 7, font: fontRegular, color: { r: 0.4, g: 0.4, b: 0.4 } 
-      });
-      y -= 10;
     }
 
     // Notas finales
