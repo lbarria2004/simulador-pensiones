@@ -208,9 +208,23 @@ export const PORCENTAJES_INVALIDEZ: Record<GradoInvalidez, number> = {
 } as const;
 
 // PGU (Pensión Garantizada Universal)
+// Actualizado según valor vigente 2025
 export const PGU = {
-  MONTO_BASE: 224004,
-  TOPE_INGRESO: 1054000
+  MONTO_BASE: 231732,  // Valor actualizado enero 2025
+  TOPE_INGRESO: 1054000,
+  FECHA_ACTUALIZACION: 'Enero 2025'
+} as const;
+
+// ==========================================
+// BENEFICIO POR AÑOS COTIZADOS (BAC)
+// Según Norma de Carácter General N° 350, de 12 de septiembre de 2025
+// ==========================================
+
+export const BAC = {
+  UF_POR_ANO: 0.1,        // 0,1 UF por cada año cotizado
+  TOPE_MENSUAL_UF: 2.5,   // Tope máximo mensual de 2,5 UF
+  FECHA_INICIO: '2026-01-01', // El beneficio se devenga desde 1 de enero de 2026
+  FECHA_CORTE: '2025-07-31'   // Cotizaciones hasta el 31 de julio de 2025
 } as const;
 
 // ==========================================
@@ -1916,24 +1930,199 @@ export function formatearUF(valor: number): string {
   return valor.toFixed(2) + ' UF';
 }
 
+// ==========================================
+// PENSIÓN GARANTIZADA UNIVERSAL (PGU)
+// ==========================================
+
+export interface ResultadoPGU {
+  aplica: boolean;
+  montoMensual: number;
+  montoAnual: number;
+  pensionBase: number;
+  factorDescuento: number;
+  explicacion: string;
+}
+
+/**
+ * Calcula la Pensión Garantizada Universal (PGU)
+ * 
+ * Requisitos:
+ * - Tener 65 años o más
+ * - Tener pensión menor al tope de ingresos (10,54 UF mensuales)
+ * - Residencia en Chile por al menos 20 años
+ * 
+ * Fórmula: PGU = Monto Base × (1 - Pensión/Tope)
+ */
+export function calcularPGU(
+  pensionMensual: number,
+  edad: number,
+  anosResidenciaChile: number = 20
+): ResultadoPGU {
+  // Verificar requisitos de edad
+  if (edad < 65) {
+    return {
+      aplica: false,
+      montoMensual: 0,
+      montoAnual: 0,
+      pensionBase: pensionMensual,
+      factorDescuento: 0,
+      explicacion: 'No cumple el requisito de edad (65 años o más)'
+    };
+  }
+
+  // Verificar requisito de residencia
+  if (anosResidenciaChile < 20) {
+    return {
+      aplica: false,
+      montoMensual: 0,
+      montoAnual: 0,
+      pensionBase: pensionMensual,
+      factorDescuento: 0,
+      explicacion: `No cumple el requisito de residencia (20 años en Chile). Tiene ${anosResidenciaChile} años.`
+    };
+  }
+
+  // Verificar tope de pensión
+  if (pensionMensual >= PGU.TOPE_INGRESO) {
+    return {
+      aplica: false,
+      montoMensual: 0,
+      montoAnual: 0,
+      pensionBase: pensionMensual,
+      factorDescuento: 1,
+      explicacion: `La pensión ($${pensionMensual.toLocaleString('es-CL')}) supera el tope de $${PGU.TOPE_INGRESO.toLocaleString('es-CL')}`
+    };
+  }
+
+  // Calcular PGU
+  const factorDescuento = pensionMensual / PGU.TOPE_INGRESO;
+  const montoPGU = Math.round(PGU.MONTO_BASE * (1 - factorDescuento));
+  
+  return {
+    aplica: true,
+    montoMensual: montoPGU,
+    montoAnual: montoPGU * 12,
+    pensionBase: pensionMensual,
+    factorDescuento,
+    explicacion: `PGU = $${PGU.MONTO_BASE.toLocaleString('es-CL')} × (1 - ${pensionMensual.toLocaleString('es-CL')}/${PGU.TOPE_INGRESO.toLocaleString('es-CL')}) = $${montoPGU.toLocaleString('es-CL')}`
+  };
+}
+
+// ==========================================
+// BENEFICIO POR AÑOS COTIZADOS (BAC)
+// ==========================================
+
+export interface ResultadoBAC {
+  aplica: boolean;
+  anosCotizados: number;
+  mesesAdicionales: number;
+  beneficioUF: number;
+  beneficioMensualPesos: number;
+  beneficioAnualPesos: number;
+  topeAplicado: boolean;
+  explicacion: string;
+}
+
+/**
+ * Calcula el Beneficio por Años Cotizados (BAC)
+ * 
+ * Fórmula: BAC = años cotizados × 0,1 UF
+ * Tope máximo: 2,5 UF mensuales
+ * 
+ * El beneficio se devenga desde el 1 de enero de 2026
+ * Se contabilizan cotizaciones hasta el 31 de julio de 2025
+ */
+export function calcularBAC(
+  anosCotizados: number,
+  mesesAdicionales: number = 0,
+  valorUF: number = UF_ACTUAL
+): ResultadoBAC {
+  // Calcular años totales con fracción
+  const anosFraccion = mesesAdicionales / 12;
+  const anosTotales = anosCotizados + anosFraccion;
+  
+  // Calcular beneficio en UF
+  let beneficioUF = anosTotales * BAC.UF_POR_ANO;
+  let topeAplicado = false;
+  
+  // Aplicar tope máximo
+  if (beneficioUF > BAC.TOPE_MENSUAL_UF) {
+    beneficioUF = BAC.TOPE_MENSUAL_UF;
+    topeAplicado = true;
+  }
+  
+  // Convertir a pesos
+  const beneficioMensualPesos = Math.round(beneficioUF * valorUF);
+  const beneficioAnualPesos = beneficioMensualPesos * 12;
+  
+  // Generar explicación
+  let explicacion = '';
+  if (anosTotales > 0) {
+    explicacion = `BAC = ${anosTotales.toFixed(2)} años × 0,1 UF = ${beneficioUF.toFixed(2)} UF`;
+    if (topeAplicado) {
+      explicacion += ' (tope máximo aplicado: 2,5 UF)';
+    }
+    explicacion += ` = $${beneficioMensualPesos.toLocaleString('es-CL')}/mes`;
+  } else {
+    explicacion = 'No tiene años cotizados registrados';
+  }
+  
+  return {
+    aplica: anosTotales > 0,
+    anosCotizados,
+    mesesAdicionales,
+    beneficioUF: Math.round(beneficioUF * 100) / 100,
+    beneficioMensualPesos,
+    beneficioAnualPesos,
+    topeAplicado,
+    explicacion
+  };
+}
+
+/**
+ * Calcula los beneficios adicionales completos (PGU + BAC)
+ */
 export function calcularBeneficiosAdicionales(
   pensionMensual: number, 
   edad: number, 
   sexo: Sexo, 
-  anosCotizados: number
-) {
-  const beneficios: { pgu?: number; bonoCotizacion?: number } = {};
+  anosCotizados: number,
+  mesesAdicionales: number = 0,
+  anosResidenciaChile: number = 20
+): {
+  pgu?: ResultadoPGU;
+  bac?: ResultadoBAC;
+  totalBeneficios: number;
+  pensionTotal: number;
+  detalles: string[];
+} {
+  const detalles: string[] = [];
+  let totalBeneficios = 0;
   
-  // PGU
-  if (pensionMensual < PGU.TOPE_INGRESO) {
-    const factor = pensionMensual / PGU.TOPE_INGRESO;
-    beneficios.pgu = Math.round(PGU.MONTO_BASE * (1 - factor));
+  // Calcular PGU
+  const pgu = calcularPGU(pensionMensual, edad, anosResidenciaChile);
+  if (pgu.aplica) {
+    totalBeneficios += pgu.montoMensual;
+    detalles.push(`PGU: $${pgu.montoMensual.toLocaleString('es-CL')}/mes`);
   }
   
-  // Bono por años cotizados (0.1 UF por año)
-  if (anosCotizados > 0) {
-    beneficios.bonoCotizacion = Math.round(anosCotizados * 0.1 * UF_ACTUAL);
+  // Calcular BAC
+  const bac = calcularBAC(anosCotizados, mesesAdicionales);
+  if (bac.aplica) {
+    totalBeneficios += bac.beneficioMensualPesos;
+    detalles.push(`BAC: ${bac.beneficioUF.toFixed(2)} UF ($${bac.beneficioMensualPesos.toLocaleString('es-CL')}/mes)`);
+    if (bac.topeAplicado) {
+      detalles.push(`BAC: Tope máximo de 2,5 UF aplicado`);
+    }
   }
   
-  return Object.keys(beneficios).length > 0 ? beneficios : undefined;
+  const pensionTotal = pensionMensual + totalBeneficios;
+  
+  return {
+    pgu: pgu.aplica ? pgu : undefined,
+    bac: bac.aplica ? bac : undefined,
+    totalBeneficios,
+    pensionTotal,
+    detalles
+  };
 }

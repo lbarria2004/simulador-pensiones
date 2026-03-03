@@ -26,7 +26,8 @@ import {
   ArrowUpRight,
   FileText,
   RefreshCw,
-  Settings
+  Settings,
+  Gift
 } from 'lucide-react'
 import {
   LineChart,
@@ -100,6 +101,8 @@ interface ParametrosSistema {
   tasaRVManual: number
   usarUFManual: boolean
   ufManual: number
+  incluirBeneficiosAdicionales: boolean
+  mesesAdicionalesBAC: number
 }
 
 interface PensionPorBeneficiario {
@@ -199,7 +202,9 @@ export default function SimuladorPensiones() {
     tasaRPManual: 3.41,
     tasaRVManual: 2.79,
     usarUFManual: false,
-    ufManual: 38500
+    ufManual: 38500,
+    incluirBeneficiosAdicionales: false,
+    mesesAdicionalesBAC: 0
   })
 
   // Cargar UF automática al iniciar
@@ -680,12 +685,16 @@ export default function SimuladorPensiones() {
             ingresoBase: formData.ingresoBase
           },
           parametros: {
-            uf: getUFActiva(),
-            tasaRP: getTasasActivas().tasaRP,
-            tasaRV: getTasasActivas().tasaRV
+            uf: parametros.uf,
+            tasaRP: parametros.tasaRP,
+            tasaRV: parametros.tasaRV,
+            incluirBeneficiosAdicionales: parametros.incluirBeneficiosAdicionales,
+            mesesAdicionalesBAC: parametros.mesesAdicionalesBAC
           },
           resultados: resultados,
-          beneficiarios: formData.beneficiarios
+          beneficiarios: formData.beneficiarios,
+          incluirBeneficiosAdicionales: parametros.incluirBeneficiosAdicionales,
+          mesesAdicionalesBAC: parametros.mesesAdicionalesBAC
         })
       })
 
@@ -1303,6 +1312,97 @@ export default function SimuladorPensiones() {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Beneficios Adicionales - PGU y BAC */}
+            <Card className="border-amber-200 bg-amber-50/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Gift className="h-4 w-4 text-amber-600" />
+                  Beneficios Adicionales (PGU y BAC)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Incluir Pensión Garantizada Universal y Bono por Años Cotizados en el informe
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Toggle para incluir beneficios */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-medium">Incluir en informe</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Calcula PGU y BAC para complementar la pensión
+                    </p>
+                  </div>
+                  <Switch
+                    checked={parametros.incluirBeneficiosAdicionales}
+                    onCheckedChange={(v) => setParametros(prev => ({ ...prev, incluirBeneficiosAdicionales: v }))}
+                  />
+                </div>
+
+                {parametros.incluirBeneficiosAdicionales && (
+                  <div className="space-y-3 pt-2 border-t border-amber-200">
+                    {/* Información PGU */}
+                    <div className="p-2 bg-blue-50 rounded border border-blue-200">
+                      <div className="text-xs font-medium text-blue-800 mb-1">PGU - Pensión Garantizada Universal</div>
+                      <div className="text-[10px] text-blue-700">
+                        Monto base: <strong>$231.732</strong> mensuales (a partir de 2025)
+                      </div>
+                      <div className="text-[10px] text-blue-600 mt-1">
+                        Requisito: 65+ años y pensión &lt; $1.054.000
+                      </div>
+                    </div>
+
+                    {/* Información BAC */}
+                    <div className="p-2 bg-green-50 rounded border border-green-200">
+                      <div className="text-xs font-medium text-green-800 mb-1">BAC - Bono por Años Cotizados</div>
+                      <div className="text-[10px] text-green-700">
+                        <strong>0,1 UF</strong> por cada año cotizado (tope: 2,5 UF)
+                      </div>
+                      <div className="text-[10px] text-green-600 mt-1">
+                        Años cotizados actuales: <strong>{formData.anosCotizados}</strong>
+                      </div>
+                    </div>
+
+                    {/* Meses adicionales para BAC */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Meses adicionales cotizados (fracción)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={11}
+                          value={parametros.mesesAdicionalesBAC}
+                          onChange={(e) => setParametros(prev => ({ 
+                            ...prev, 
+                            mesesAdicionalesBAC: parseInt(e.target.value) || 0 
+                          }))}
+                          className="h-8 w-20"
+                        />
+                        <span className="text-xs text-muted-foreground">meses</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        Años totales: {(formData.anosCotizados + parametros.mesesAdicionalesBAC / 12).toFixed(2)}
+                      </p>
+                    </div>
+
+                    {/* Preview del cálculo */}
+                    <div className="p-2 bg-slate-100 rounded text-xs">
+                      <div className="font-medium text-slate-700 mb-1">Vista previa del beneficio:</div>
+                      <div className="text-[10px] text-slate-600 space-y-1">
+                        <div>BAC estimado: <strong>
+                          {(() => {
+                            const anosTotales = formData.anosCotizados + parametros.mesesAdicionalesBAC / 12
+                            let bacUF = anosTotales * 0.1
+                            if (bacUF > 2.5) bacUF = 2.5
+                            return `${bacUF.toFixed(2)} UF ($${Math.round(bacUF * parametros.uf).toLocaleString('es-CL')}/mes)`
+                          })()}
+                        </strong></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
